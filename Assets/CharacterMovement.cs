@@ -5,6 +5,9 @@ using System.Collections;
 public class CharacterMovement : MonoBehaviour
 {
     [SerializeField]private Rigidbody rb;
+    public float gravityScale;
+    public float fallingGravityScale;
+    public float gravityAcceleration;
     [SerializeField] private Vector3 rotationDiff;
     public float rotationSpeed;
 
@@ -34,7 +37,10 @@ public class CharacterMovement : MonoBehaviour
     {
         //rb = gameObject.GetComponent<Rigidbody>();
     }
-
+    private void FixedUpdate()
+    {
+        ApplyGravity();
+    }
     // Update is called once per frame
     void Update()
     {
@@ -53,7 +59,8 @@ public class CharacterMovement : MonoBehaviour
 
 
         //rb.transform.rotation = Quaternion.Slerp(rb.transform.rotation, camRotation, Time.deltaTime * rotationSpeed);
-        rb.rotation = camRotation;
+        rb.rotation = Quaternion.Slerp(rb.transform.rotation,camRotation, Time.deltaTime * rotationSpeed);
+        //rb.rotation = camRotation;
         rotationDiff = rb.transform.rotation.eulerAngles;
     }
     void Movement()
@@ -92,6 +99,19 @@ public class CharacterMovement : MonoBehaviour
             }
 
         }
+
+    }
+    void ApplyGravity()
+    {
+        if (rb.linearVelocity.y >= 0)
+        {
+            rb.AddForce(new Vector3(0f, -gravityScale, 0f));
+        }
+        else if (rb.linearVelocity.y < 0)
+        {
+            rb.AddForce(new Vector3(0f,-fallingGravityScale, 0f));
+        }
+
 
     }
     void Jump()
