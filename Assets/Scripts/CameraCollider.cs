@@ -21,11 +21,13 @@ public class CameraCollider : MonoBehaviour
     public bool collided,targetCollided;
     [Range(0f, 1f)]
     public float lerpAmount;
-    public float hOffset, baseHOffset,changeRate,accelerationRate; //Change rate = The speed of the movement of the target offset Acceleration rate = The acceleration of change rate
+    public float hOffset, baseHOffset,minHOffset,changeRate,accelerationRate,sphereRadius,safetyFrustrumMultiplier; //Change rate = The speed of the movement of the target offset Acceleration rate = The acceleration of change rate
     [SerializeField]private float hOffsetOffset; //An offset for the overlap spheres to check 
     public bool isShrinking,isGrowing;
     public float positionSmoothTime = 0.1f;
     [SerializeField] private float smoothTime = 0.2f;
+
+
 
 
 
@@ -38,6 +40,11 @@ public class CameraCollider : MonoBehaviour
     private float collisionStayTime = 0f; 
     private const float minCollisionTime = 0.1f;
 
+    Vector3 topRightFrustrumCorner;
+    Vector3 bottomLeftFrustrumCorner;
+    Vector3 firstCollisionPoint;
+    Vector3 secondCollisionPoint;
+
     void OnDrawGizmos()
     {
         if (cameraTarget != null)
@@ -49,6 +56,11 @@ public class CameraCollider : MonoBehaviour
         if (Camera.main == null)
             return;
 
+        if (collided)
+        {
+            Gizmos.DrawSphere(firstCollisionPoint, 0.5f);
+            Gizmos.DrawSphere(secondCollisionPoint, 0.5f);
+        }
         Vector3 startPosition = Camera.main.transform.position;
         Vector3 endPosition = cam.Follow.position + targetOffset;
         Vector3 collisionPoint;
@@ -99,6 +111,12 @@ public class CameraCollider : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
+        topRightFrustrumCorner = Camera.main.ViewportToWorldPoint(new Vector3(1, 1, Camera.main.nearClipPlane));
+        bottomLeftFrustrumCorner = Camera.main.ViewportToWorldPoint(new Vector3(0, 0, Camera.main.nearClipPlane));
+
+        // Apply the safety frustum multiplier to make the camera appear larger in frustum corner detection
+        topRightFrustrumCorner = cameraTarget.position + (topRightFrustrumCorner - cameraTarget.position) * safetyFrustrumMultiplier;
+        bottomLeftFrustrumCorner = cameraTarget.position + (bottomLeftFrustrumCorner - cameraTarget.position) * safetyFrustrumMultiplier;
 
         CheckCollisions();
         CheckTargetCollisions();
@@ -106,15 +124,15 @@ public class CameraCollider : MonoBehaviour
     }
     void CheckTargetCollisions()
     {
-
         Vector3 position = transform.position;
 
-        //Checks an overlap sphere the size of the target to avoid the raycasts starting from within the object
-        Collider[] colliders = Physics.OverlapSphere(cameraTarget.position + new Vector3(hOffsetOffset,0f,0f)
-            , cameraTarget.localScale.x / 2f, wall);
-        //Checks a bigger overlap sphere in order to avoid shrinking and growing every frame
-        Collider[] safetyColliders = Physics.OverlapSphere(cameraTarget.position + new Vector3(hOffsetOffset, 0f, 0f)
-            , cameraTarget.localScale.x / 2f * 1.5f, wall);
+        // Checks an overlap sphere the size of the target to avoid the raycasts starting from within the object
+        Collider[] colliders = Physics.OverlapSphere(cameraTarget.position + new Vector3(hOffsetOffset, 0f, 0f),
+            cameraTarget.localScale.x / 2f, wall);
+
+        // Checks a bigger overlap sphere in order to avoid shrinking and growing every frame
+        Collider[] safetyColliders = Physics.OverlapSphere(cameraTarget.position + new Vector3(hOffsetOffset, 0f, 0f),
+            cameraTarget.localScale.x / 2f * 2f, wall);
 
         // If there are colliders in the normal range, start shrinking
         if (colliders.Length > 0)
@@ -126,9 +144,9 @@ public class CameraCollider : MonoBehaviour
         if (isShrinking)
         {
             hOffset -= changeRate * Time.deltaTime;
-            if (hOffset <= 0)
+            if (hOffset <= minHOffset)  // Ensure hOffset does not go below minHOffset
             {
-                hOffset = 0;
+                hOffset = minHOffset;
             }
 
             // If colliders are gone, check safetyColliders
@@ -145,13 +163,13 @@ public class CameraCollider : MonoBehaviour
                 }
             }
         }
-        else if (safetyColliders.Length>0)
+        else if (safetyColliders.Length > 0)
         {
-
+            // If colliders are within the safety range, no action (can be left empty if not needed)
         }
         else
         {
-
+            // Growing phase: Ensure hOffset doesn't exceed baseHOffset
             if (hOffset < baseHOffset)
             {
                 hOffset += changeRate * Time.deltaTime;
@@ -169,15 +187,15 @@ public class CameraCollider : MonoBehaviour
             localPos.x = Mathf.Lerp(localPos.x, hOffset, Time.deltaTime / positionSmoothTime);
             cameraTarget.localPosition = localPos;
         }
-       
     }
-    
+
+
 
     void ShrinkTargetHDistance(bool isShrinking)
     {
 
     }
-    void CheckCollisions()
+    /*void CheckCollisions()
     {
         Vector3 collisionPoint;
         Vector3 endPosition = cam.Follow.position;
@@ -220,6 +238,96 @@ public class CameraCollider : MonoBehaviour
         }
 
     }
+    */
+    void CheckCollisions()
+    {
+        if (safetyFrustrumMultiplier == 0) { safetyFrustrumMultiplier = 1; }
+        Vector3 collisionPoint;
+        Vector3 endPosition = cam.Follow.position;
+        Vector3 originalCameraPosition = cam1.transform.position;
+        // Get the top-right and bottom-left corners of the camera's frustrum at the near clipping plane
+        topRightFrustrumCorner = Camera.main.ViewportToWorldPoint(new Vector3(1, 1, Camera.main.nearClipPlane));
+        bottomLeftFrustrumCorner = Camera.main.ViewportToWorldPoint(new Vector3(0, 0, Camera.main.nearClipPlane));
+
+        // Apply the safety frustum multiplier to make the camera appear larger in frustum corner detection
+        topRightFrustrumCorner = cameraTarget.position + (topRightFrustrumCorner - cameraTarget.position) * safetyFrustrumMultiplier;
+        bottomLeftFrustrumCorner = cameraTarget.position + (bottomLeftFrustrumCorner - cameraTarget.position) * safetyFrustrumMultiplier;
+
+        // Calculate the direction from the top-right to the bottom-left frustum corner
+        Vector3 directionTRtoBL = (bottomLeftFrustrumCorner - topRightFrustrumCorner).normalized;
+
+        // Calculate the distance between the top-right and bottom-left corners
+        float distanceTRtoBL = Vector3.Distance(topRightFrustrumCorner, bottomLeftFrustrumCorner);
+
+        // Calculate the target camera center using the direction and distance of the frustum corners
+        Vector3 targetCameraCenter = topRightFrustrumCorner + directionTRtoBL * (distanceTRtoBL / 2f);
+
+
+        // Declare separate RaycastHit variables for each ray
+        RaycastHit hitTopRight, hitBottomLeft;
+
+        // Start rays from the cameraTarget to the top-right and bottom-left corners of the camera's frustrum
+        bool topRightHit = Physics.Raycast(cameraTarget.position, (topRightFrustrumCorner - cameraTarget.position).normalized, out hitTopRight, lineLength, floor | wall, QueryTriggerInteraction.Ignore);
+        bool bottomLeftHit = Physics.Raycast(cameraTarget.position, (bottomLeftFrustrumCorner - cameraTarget.position).normalized, out hitBottomLeft, lineLength, floor | wall, QueryTriggerInteraction.Ignore);
+
+        // Draw debug lines for both rays
+        Color rayColor = Color.green; // Default color (no collision)
+
+        if (topRightHit || bottomLeftHit)
+        {
+            // If either corner hit an object, change the color to red (collision detected)
+            rayColor = Color.red;
+        }
+
+        // Draw the debug line for the top-right corner
+        Debug.DrawLine(cameraTarget.position, topRightFrustrumCorner, rayColor);
+
+        // Draw the debug line for the bottom-left corner
+        Debug.DrawLine(cameraTarget.position, bottomLeftFrustrumCorner, rayColor);
+
+        // Handle collision and radius adjustment
+        if (topRightHit || bottomLeftHit)
+        {
+            float radiusRight = 0f;
+            float radiusLeft = 0f;
+            // Handle top-right ray hit
+            if (topRightHit)
+            {
+
+                collisionPoint = hitTopRight.point;
+                firstCollisionPoint = collisionPoint;
+                targetCameraCenter = collisionPoint + directionTRtoBL * (distanceTRtoBL / 2f);
+                radiusRight = Vector3.Distance(cameraTarget.position, collisionPoint) - forwardOffset;
+            }
+
+            // Handle bottom-left ray hit
+            if (bottomLeftHit)
+            {
+
+                collisionPoint = hitBottomLeft.point;
+                secondCollisionPoint = collisionPoint;
+                targetCameraCenter = collisionPoint + (-directionTRtoBL) * (distanceTRtoBL/2f); 
+                radiusLeft = Vector3.Distance(cameraTarget.position, collisionPoint) - forwardOffset; 
+            }
+            radiusRight = radiusRight == 0 ? radiusLeft : radiusRight;
+            radiusLeft = radiusLeft == 0 ? radiusRight : radiusLeft;
+            targetRadius = Mathf.Min(radiusRight, radiusLeft);
+            collided = true;
+        }
+        else if (collided)
+        {
+            RaycastHit hit;
+            if (Physics.Raycast(endPosition, (originalCameraPosition - endPosition).normalized, out hit, lineLength, floor | wall, QueryTriggerInteraction.Ignore))
+            {
+                collided = true;
+            }
+            else
+            {
+                collided = false;
+            }
+        }
+    }
+
 
     bool IsCameraCollidingWithWall(Vector3 cameraPosition, Vector3 cameraDirection, float checkDistance)
     {

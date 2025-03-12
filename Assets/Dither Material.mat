@@ -60,7 +60,7 @@ Material:
     - _Speed: 0.01
     - _dither_size: 2.73
     m_Colors:
-    - _Base_Color: {r: 1, g: 1, b: 1, a: 1}
+    - _Base_Color: {r: 1, g: 1, b: 1, a: 0.93333334}
     - _DitherDirection: {r: 1, g: 1, b: 0, a: 0}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
