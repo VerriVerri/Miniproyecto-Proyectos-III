@@ -29,8 +29,9 @@ Material:
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
-  m_CustomRenderQueue: -1
-  stringTagMap: {}
+  m_CustomRenderQueue: 3000
+  stringTagMap:
+    RenderType: Transparent
   disabledShaderPasses:
   - MOTIONVECTORS
   m_LockedProperties: 
@@ -60,7 +61,7 @@ Material:
     - _Speed: 0.01
     - _dither_size: 2.73
     m_Colors:
-    - _Base_Color: {r: 1, g: 1, b: 1, a: 0.93333334}
+    - _Base_Color: {r: 1, g: 1, b: 1, a: 1}
     - _DitherDirection: {r: 1, g: 1, b: 0, a: 0}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

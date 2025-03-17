@@ -3,6 +3,8 @@ using Unity.Cinemachine;
 
 public class CameraCollider : MonoBehaviour
 {
+    private bool previousCollidedState = false;
+    public float minRadiusDifference = 0.2f;
     public CinemachineCamera cam;
     
 
@@ -13,6 +15,7 @@ public class CameraCollider : MonoBehaviour
     public float forwardOffset;
     Vector3 spawnPoint;
     public LayerMask collidesWithCamera;
+    public bool collidesWithFloor;
 
     public LayerMask floor, wall;
     public Camera cam1;
@@ -34,7 +37,7 @@ public class CameraCollider : MonoBehaviour
     [Header("OrbitalFollow Settings")]
     public CinemachineOrbitalFollow camFollow;
     public CinemachineHardLookAt camController;
-    public float baseRadius, targetRadius;
+    public float baseRadius, targetRadius, minimumRadius;
 
 
     private float collisionStayTime = 0f; 
@@ -121,6 +124,7 @@ public class CameraCollider : MonoBehaviour
         CheckCollisions();
         CheckTargetCollisions();
         ChangeRadius(collided);
+        CheckCollidedStateChange();
     }
     void CheckTargetCollisions()
     {
@@ -245,6 +249,7 @@ public class CameraCollider : MonoBehaviour
         Vector3 collisionPoint;
         Vector3 endPosition = cam.Follow.position;
         Vector3 originalCameraPosition = cam1.transform.position;
+
         // Get the top-right and bottom-left corners of the camera's frustrum at the near clipping plane
         topRightFrustrumCorner = Camera.main.ViewportToWorldPoint(new Vector3(1, 1, Camera.main.nearClipPlane));
         bottomLeftFrustrumCorner = Camera.main.ViewportToWorldPoint(new Vector3(0, 0, Camera.main.nearClipPlane));
@@ -262,14 +267,15 @@ public class CameraCollider : MonoBehaviour
         // Calculate the target camera center using the direction and distance of the frustum corners
         Vector3 targetCameraCenter = topRightFrustrumCorner + directionTRtoBL * (distanceTRtoBL / 2f);
 
-
         // Declare separate RaycastHit variables for each ray
         RaycastHit hitTopRight, hitBottomLeft;
 
         // Start rays from the cameraTarget to the top-right and bottom-left corners of the camera's frustrum
         bool topRightHit = Physics.Raycast(cameraTarget.position, (topRightFrustrumCorner - cameraTarget.position).normalized, out hitTopRight, lineLength, floor | wall, QueryTriggerInteraction.Ignore);
-        bool bottomLeftHit = Physics.Raycast(cameraTarget.position, (bottomLeftFrustrumCorner - cameraTarget.position).normalized, out hitBottomLeft, lineLength, floor | wall, QueryTriggerInteraction.Ignore);
 
+        bool bottomLeftHit = Physics.Raycast(cameraTarget.position, (bottomLeftFrustrumCorner - cameraTarget.position).normalized, out hitBottomLeft, lineLength, floor | wall, QueryTriggerInteraction.Ignore);
+        collidesWithFloor = Physics.Raycast(cameraTarget.position, (topRightFrustrumCorner - cameraTarget.position).normalized, lineLength, floor, QueryTriggerInteraction.Ignore)
+                    || Physics.Raycast(cameraTarget.position, (bottomLeftFrustrumCorner - cameraTarget.position).normalized, lineLength, floor, QueryTriggerInteraction.Ignore);
         // Draw debug lines for both rays
         Color rayColor = Color.green; // Default color (no collision)
 
@@ -285,6 +291,15 @@ public class CameraCollider : MonoBehaviour
         // Draw the debug line for the bottom-left corner
         Debug.DrawLine(cameraTarget.position, bottomLeftFrustrumCorner, rayColor);
 
+        // Only draw safety raycast if collided is true
+        if (collided)
+        {
+            // Draw the safety raycast (newly added for visualization)
+            Vector3 safetyDirection = (topRightFrustrumCorner - bottomLeftFrustrumCorner).normalized;
+            Vector3 safetyRayStart = cameraTarget.position + new Vector3(hOffsetOffset, 0, 0); // Slightly offset the ray start to match your logic
+            Debug.DrawRay(safetyRayStart, safetyDirection * lineLength, Color.blue); // Draw the safety ray in blue
+        }
+
         // Handle collision and radius adjustment
         if (topRightHit || bottomLeftHit)
         {
@@ -293,7 +308,6 @@ public class CameraCollider : MonoBehaviour
             // Handle top-right ray hit
             if (topRightHit)
             {
-
                 collisionPoint = hitTopRight.point;
                 firstCollisionPoint = collisionPoint;
                 targetCameraCenter = collisionPoint + directionTRtoBL * (distanceTRtoBL / 2f);
@@ -303,11 +317,10 @@ public class CameraCollider : MonoBehaviour
             // Handle bottom-left ray hit
             if (bottomLeftHit)
             {
-
                 collisionPoint = hitBottomLeft.point;
                 secondCollisionPoint = collisionPoint;
-                targetCameraCenter = collisionPoint + (-directionTRtoBL) * (distanceTRtoBL/2f); 
-                radiusLeft = Vector3.Distance(cameraTarget.position, collisionPoint) - forwardOffset; 
+                targetCameraCenter = collisionPoint + (-directionTRtoBL) * (distanceTRtoBL / 2f);
+                radiusLeft = Vector3.Distance(cameraTarget.position, collisionPoint) - forwardOffset;
             }
             radiusRight = radiusRight == 0 ? radiusLeft : radiusRight;
             radiusLeft = radiusLeft == 0 ? radiusRight : radiusLeft;
@@ -327,6 +340,7 @@ public class CameraCollider : MonoBehaviour
             }
         }
     }
+
 
 
     bool IsCameraCollidingWithWall(Vector3 cameraPosition, Vector3 cameraDirection, float checkDistance)
@@ -349,19 +363,46 @@ public class CameraCollider : MonoBehaviour
     }
     void ChangeRadius(bool collided)
     {
+        // Ensure target radius does not exceed the base radius
         if (targetRadius > baseRadius)
         {
             targetRadius = baseRadius;
         }
+
+        // Set the target radius based on whether collided is true
         float target = collided ? targetRadius : baseRadius;
 
-        if (!isShrinking)
+        // Only apply the minimum radius logic if collidesWithFloor is true
+        if (collidesWithFloor)
         {
-            camFollow.Radius = Mathf.Lerp(camFollow.Radius, target - forwardOffset <= 0.3f ? 0.3f : target - forwardOffset, lerpAmount);
+            // Check the difference between current radius and target radius
+            float radiusDifference = Mathf.Abs(camFollow.Radius - target);
+
+            // If the difference is smaller than the minRadiusDifference, use the smallest value
+            if (radiusDifference < minRadiusDifference)
+            {
+                // Select the smallest value between the current radius and the target
+                camFollow.Radius = Mathf.Min(camFollow.Radius, target);
+            }
+            else
+            {
+                // If not within the threshold, interpolate between current and target
+                if (!isShrinking)
+                {
+                    camFollow.Radius = Mathf.Lerp(camFollow.Radius, target - forwardOffset <= minimumRadius ? minimumRadius : target - forwardOffset, lerpAmount);
+                }
+            }
+        }
+        else
+        {
+            // If not colliding with the floor, simply interpolate the radius without the minimum radius logic
+            if (!isShrinking)
+            {
+                camFollow.Radius = Mathf.Lerp(camFollow.Radius, target - forwardOffset <= minimumRadius ? minimumRadius : target - forwardOffset, lerpAmount);
+            }
         }
 
-
-
+        // Final adjustment if the radius is close to the target
         if (Mathf.Abs(camFollow.Radius - target) < 0.01f)
         {
             camFollow.Radius = target;
@@ -370,5 +411,16 @@ public class CameraCollider : MonoBehaviour
     void ChangeOffset(bool targetCollided)
     {
 
+    }
+    void CheckCollidedStateChange()
+    {
+        if (collided != previousCollidedState)
+        {
+            // Log the state change
+            Debug.Log("Collided state changed. New value: " + collided);
+
+            // Update previous state
+            previousCollidedState = collided;
+        }
     }
 }

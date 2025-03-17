@@ -1,50 +1,103 @@
 using UnityEngine;
+using UnityEditor; // Needed for EditorUtility functions
 
+[ExecuteInEditMode] // Ensures this runs in the editor
 public class TransparencyController : MonoBehaviour
 {
-    public float maxDistance = 5f;  // Distance at which alpha is max
-    public float minDistance = 1f;  // Distance at which alpha is 10
-    public float maxAlpha = 1f;  // Full opacity
-    public float minAlpha = 10f / 255f;  // Converted to 0-1 range
+    [Range(0, 255)] public int alpha = 255;
+    [Range(0, 255)] public int maxAlpha = 255;
+    [Range(0, 255)] public int minAlpha = 0;
 
-    private Renderer objectRenderer;  // The renderer of the object
-    private Material material;  // Material with the Shader Graph
-    public float distance;
-    void Start()
-    {
-        // Get the renderer component and the material
-        objectRenderer = GetComponent<Renderer>();
-        if (objectRenderer == null)
-        {
-            Debug.LogError("No Renderer found on this GameObject.");
-            return;
-        }
+    public float minDistance = 5f; // Minimum distance for transparency
+    public float maxDistance = 20f; // Maximum distance for transparency
 
-        // Get the material of the object (Shader Graph material)
-        material = objectRenderer.material;
-    }
+    // Expose these fields so they can be assigned in the editor
+    public Camera mainCamera; // Reference to the camera
+    public GameObject targetObject; // Reference to the object whose transparency will change
+
+    private Renderer objRenderer;
+    public Material objMaterial;
 
     void Update()
     {
-        if (!material) return;
+        if (mainCamera != null && targetObject != null)
+        {
+            ApplyAlphaBasedOnDistance();
+        }
+    }
 
-        // Get the main camera and calculate the distance to it
-        Camera mainCamera = Camera.main;
-        if (mainCamera == null) return;
+    void ApplyAlphaBasedOnDistance()
+    {
+        if (objRenderer == null)
+            objRenderer = targetObject.GetComponent<Renderer>();
 
-        distance = Vector3.Distance(transform.position, mainCamera.transform.position);
+        if (objRenderer != null)
+        {
+            if (objMaterial == null)
+                objMaterial = objRenderer.sharedMaterial; // Use sharedMaterial to modify actual material
 
-        // Clamp distance within min and max range
-        distance = Mathf.Clamp(distance, minDistance, maxDistance);
+            if (objMaterial != null)
+            {
+                // Calculate the distance from the assigned camera to the target object
+                float distance = Vector3.Distance(mainCamera.transform.position, targetObject.transform.position);
 
-        // Calculate alpha using linear interpolation (lerp)
-        float alpha = Mathf.Lerp(minAlpha, maxAlpha, (distance - minDistance) / (maxDistance - minDistance));
+                // If the distance is below the minimum, set alpha to minAlpha (more transparent)
+                if (distance <= minDistance)
+                {
+                    alpha = minAlpha;
+                }
+                // If the distance is above the maximum, set alpha to maxAlpha (fully opaque)
+                else if (distance >= maxDistance)
+                {
+                    alpha = maxAlpha;
+                }
+                // Otherwise, calculate alpha based on linear interpolation
+                else
+                {
+                    float t = (distance - minDistance) / (maxDistance - minDistance); // Linear factor
+                    alpha = Mathf.RoundToInt(Mathf.Lerp(minAlpha, maxAlpha, t)); // Reverse the alpha interpolation
+                }
 
-        // Set the new alpha value to the shader's color property
-        Color color = material.GetColor("_Base_Color");  // Get the color from Shader Graph
-        color.a = alpha;
-        material.SetColor("_Base_Color", color);  // Set the updated color back to Shader Graph
+                // Ensure alpha is within bounds
+                alpha = Mathf.Clamp(alpha, minAlpha, maxAlpha);
+                ApplyAlpha();
+            }
+        }
+    }
+
+    void ApplyAlpha()
+    {
+        if (objMaterial != null)
+        {
+            // Ensure the material supports transparency
+            objMaterial.SetOverrideTag("RenderType", "Transparent");
+            objMaterial.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            objMaterial.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            objMaterial.SetInt("_ZWrite", 0);
+            objMaterial.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+
+            // Adjust the alpha value in the material
+            if (objMaterial.HasProperty("_Base_Color")) // Standard Shader
+            {
+                Color color = objMaterial.GetColor("_Base_Color");
+                color.a = alpha / 255f;
+                objMaterial.SetColor("_Base_Color", color);
+            }
+
+            // Mark material as dirty so Unity updates it
+#if UNITY_EDITOR
+            EditorUtility.SetDirty(objMaterial);
+            EditorUtility.SetDirty(gameObject);
+            SceneView.RepaintAll(); // Force scene update
+#endif
+        }
     }
 }
+
+
+
+
+
+
 
 
