@@ -6,25 +6,31 @@ public class HomingMissile : MonoBehaviour
     public Transform target;
     public Vector3 targetPosition;
     public Rigidbody rb;
+    public float explosionForce = 1000f;
+    public float explosionRadius = 8f;
+    public float upwardsModifier = 1f;
+    public GameObject explosionPrefab;
 
-    public float initialForce;
+    public float initialSpeed;
     public float timeToActivate = 1f;
     public bool activatedRocket;
 
-    public float maxAngularVelocity = 9.42f;
-    public float thrustForce = 10f;  
-    public float acceleration = 5f;  
-    public float maxThrust = 100f;   
-    public float gravityReductionFactor = 2f;
-    public float maxVelocity = 50f;
+    public float maxSpeed = 9f;
+    public float currentSpeed;
+    public float linearAcceleration;
 
+    public float maxRotation;
+    public bool maxRotationAccelerating;
+    public float maxRotationAccelerationRate = 1.3f;
+    private float currentRotation;
+    public float angularAcceleration;
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
         StartCoroutine(ActivateRocket());
         rb = GetComponent < Rigidbody>();
-        rb.maxAngularVelocity = maxAngularVelocity;
+        rb.useGravity = true;
     }
 
     // Update is called once per frame
@@ -40,88 +46,159 @@ public class HomingMissile : MonoBehaviour
     {
         if (activatedRocket)
         {
+            if (!maxRotationAccelerating)
+            {
+                StartCoroutine(CheckIfStuck());
+            }
+            else
+            {
+                AccelerateMaxRotation();
+            }
+            // Apply linear and angular acceleration
+            LinearAcceleration();
+            AngularAcceleration();
+
+            // Calculate and apply rotation
             CalculateRotation();
+
+            // Calculate and apply velocity
+            CalculateVelocity();
         }
     }
-    void ApplyDrag()
+    void LinearAcceleration()
     {
-        Vector3 velocity = rb.linearVelocity;
-
-        Vector3 horizontalVelocity = new Vector3(velocity.x, 0, velocity.z);
-
-        float airResistance = horizontalVelocity.sqrMagnitude * 0.05f;
-
-        Vector3 resistanceForce = -horizontalVelocity.normalized * airResistance;
-
-        rb.AddForce(resistanceForce, ForceMode.Force);
-    }
-    void ApplyInitialTrust()
-    {
-
-    }
-    void AdjustGravity()
-    {
-        // Gravity effect decreases as thrustForce approaches maxThrust
-        float gravityMultiplier = Mathf.Lerp(1f, 0f, thrustForce / maxThrust);
-
-        // Apply an upward force to counteract gravity
-        Vector3 gravityCompensation = Vector3.up * (Physics.gravity.y * rb.mass * (1f - gravityMultiplier) * gravityReductionFactor);
-        rb.AddForce(gravityCompensation, ForceMode.Acceleration);
-    }
-    void CalculateRotation()
-    {
-        Quaternion targetRotation = Quaternion.LookRotation(targetPosition - transform.position);
-
-        // Calculate the difference between the current rotation and the target rotation
-        Quaternion deltaRotation = targetRotation * Quaternion.Inverse(transform.rotation);
-
-        Vector3 axis;
-        float angle;
-        deltaRotation.ToAngleAxis(out angle, out axis);
-
-        if (angle > 0.1f)
+        if (currentSpeed >= maxSpeed)
         {
-           rb.AddTorque(axis * angle * Time.deltaTime, ForceMode.VelocityChange);
+            currentSpeed = maxSpeed;
         }
-
-    }
-    void ApplyThrust()
-    {
-        // Increase thrust gradually, but don't exceed max thrust force
-        thrustForce = Mathf.Min(thrustForce + acceleration * Time.fixedDeltaTime, maxThrust);
-
-        // Apply force in the forward direction
-        rb.AddForce(transform.forward * thrustForce, ForceMode.Force);
-
-        // Limit max velocity (but keep the y-component free)
-        Vector3 velocity = rb.linearVelocity;
-        float horizontalSpeed = new Vector3(velocity.x, 0, velocity.z).magnitude; // Speed in X-Z plane
-
-        if (horizontalSpeed > maxVelocity)
+        else
         {
-            // Scale velocity to max speed while keeping the Y velocity unaffected
-            Vector3 clampedVelocity = velocity.normalized * maxVelocity;
-            clampedVelocity.y = velocity.y; // Preserve vertical speed
-            rb.linearVelocity = clampedVelocity;
+            currentSpeed = currentSpeed + linearAcceleration >= maxSpeed? maxSpeed: currentSpeed + linearAcceleration;
         }
     }
 
-    void AlignWithVelocity()
+    void AngularAcceleration() //Calculates the current rotation
     {
-        if (rb.linearVelocity.sqrMagnitude > 0.01f)
+        if (currentRotation >= maxRotation)
         {
-           
-            Quaternion targetRotation = Quaternion.LookRotation(rb.linearVelocity.normalized);
-
-            // Smoothly rotate towards the velocity direction
-            transform.rotation = targetRotation;
+            currentRotation = maxRotation;
         }
+        else
+        {
+            currentRotation = currentRotation + angularAcceleration >= maxRotation ? maxRotation : currentRotation + angularAcceleration;
+        }
+    }
+    void CalculateRotation() //Calculates the rotation from this rigidbody to the target location, using the current rotation variable for a smooth rotation
+    {
+        Vector3 directionToTarget = targetPosition - transform.position;
+
+        Quaternion targetRotation = Quaternion.LookRotation(directionToTarget);
+
+        transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRotation, currentRotation * Time.deltaTime);
+
+    }
+    void CalculateVelocity() //Moves the object in the direction of the previously calculated rotation, using the currentSpeed variable to calculate the magnitude of the velocity vector
+    {
+        Vector3 directionToTarget = transform.forward;
+
+        Vector3 velocity = directionToTarget * currentSpeed;
+
+        rb.linearVelocity = velocity;
+    }
+    void AccelerateMaxRotation()
+    {
+        maxRotation = maxRotation * maxRotationAccelerationRate;
+    }
+    IEnumerator DrawSphere(Vector3 explosionPoint)
+    {
+        float drawTime = 3f;
+        float timer = 0f;
+        while (timer < drawTime)
+        {
+            // You can use Debug.DrawLine to simulate a sphere
+            float sphereRadius = 1f;  // Set the radius of the sphere here
+            int segments = 12;
+            for (int i = 0; i < segments; i++)
+            {
+                // Draw lines around the explosion to form a sphere
+                float angle = (i * Mathf.PI * 2) / segments;
+                Vector3 lineStart = explosionPoint + new Vector3(Mathf.Sin(angle) * sphereRadius, 0, Mathf.Cos(angle) * sphereRadius);
+                Vector3 lineEnd = explosionPoint + new Vector3(Mathf.Sin(angle + Mathf.PI / 2) * sphereRadius, 0, Mathf.Cos(angle + Mathf.PI / 2) * sphereRadius);
+                Debug.DrawLine(lineStart, lineEnd, Color.red);
+            }
+
+            // Increment the timer
+            timer += Time.deltaTime;
+
+            // Wait until the next frame
+            yield return null;
+        }
+
+    }
+    IEnumerator CheckIfStuck()
+    {
+        yield return new WaitForSeconds(3f);
+        maxRotationAccelerating = true;
+
     }
     IEnumerator ActivateRocket()
     {
         yield return new WaitForSeconds(timeToActivate);
         activatedRocket = true;
+        
     }
+
+    private void OnTriggerEnter(Collider other)
+    {
+        if (other.gameObject.layer == LayerMask.NameToLayer("WallLimiter"))
+        {
+            return; // Ignore this collision
+        }
+        // Trigger explosion and destroy missile
+        TriggerExplosion(transform.position - rb.linearVelocity.normalized * 3f);
+        Destroy(gameObject);
+    }
+    private void TriggerExplosion(Vector3 explosionCenter)
+    {
+        GameObject explosionInstance = Instantiate(explosionPrefab, explosionCenter, Quaternion.identity);
+        // Find all objects with the "Player" or "Enemy" tag
+        GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
+        GameObject[] enemies = GameObject.FindGameObjectsWithTag("Enemy");
+
+        // Combine both arrays into one
+        GameObject[] enemiesAndPlayers = new GameObject[players.Length + enemies.Length];
+        players.CopyTo(enemiesAndPlayers, 0);
+        enemies.CopyTo(enemiesAndPlayers, players.Length);
+
+        // Loop through all objects
+        foreach (GameObject obj in enemiesAndPlayers)
+        {
+            // Get the Rigidbody component of the object
+            Rigidbody targetRb = obj.GetComponent<Rigidbody>();
+
+            // Check if the object has a Rigidbody
+            if (targetRb != null)
+            {
+                // Calculate the direction from the explosion point to the target object
+                Vector3 directionToTarget = obj.transform.position - explosionCenter;
+
+                // Calculate the distance between the explosion and the target
+                float distance = directionToTarget.magnitude;
+
+                // If the target is within the explosion radius, apply the full force
+                if (distance <= explosionRadius)
+                {
+                    // Normalize the direction to get the direction only
+                    directionToTarget.Normalize();
+
+                    // Apply the full explosion force in the direction of the target
+                    targetRb.AddForce(directionToTarget * explosionForce, ForceMode.Impulse);
+                }
+            }
+        }
+    }
+
+
     void OnDrawGizmosSelected()
     {
         // Set the color of the Gizmo
