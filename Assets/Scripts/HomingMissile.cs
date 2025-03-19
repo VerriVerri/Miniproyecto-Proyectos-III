@@ -28,7 +28,15 @@ public class HomingMissile : MonoBehaviour
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
-        StartCoroutine(ActivateRocket());
+        if (targetPosition != Vector3.zero)
+        {
+            StartCoroutine(ActivateRocket());
+        }
+        else
+        {
+            activatedRocket = true;
+        }
+
         rb = GetComponent < Rigidbody>();
         rb.useGravity = true;
     }
@@ -56,11 +64,15 @@ public class HomingMissile : MonoBehaviour
             }
             // Apply linear and angular acceleration
             LinearAcceleration();
+
             AngularAcceleration();
 
             // Calculate and apply rotation
-            CalculateRotation();
-
+            
+            if (targetPosition != Vector3.zero)
+            {
+                CalculateRotation();
+            }
             // Calculate and apply velocity
             CalculateVelocity();
         }
@@ -150,7 +162,7 @@ public class HomingMissile : MonoBehaviour
 
     private void OnTriggerEnter(Collider other)
     {
-        if (other.gameObject.layer == LayerMask.NameToLayer("WallLimiter"))
+        if (other.gameObject.layer == LayerMask.NameToLayer("WallLimiter") || other.gameObject.layer == LayerMask.NameToLayer("Player"))
         {
             return; // Ignore this collision
         }
