@@ -102,7 +102,7 @@ public class HomingMissile : MonoBehaviour
     }
     void CalculateRotation() //Calculates the rotation from this rigidbody to the target location, using the current rotation variable for a smooth rotation
     {
-        Vector3 directionToTarget = targetPosition - transform.position;
+        Vector3 directionToTarget = (targetPosition + new Vector3(0f,0.5f)) - transform.position;
 
         Quaternion targetRotation = Quaternion.LookRotation(directionToTarget);
 
@@ -162,7 +162,8 @@ public class HomingMissile : MonoBehaviour
 
     private void OnTriggerEnter(Collider other)
     {
-        if (other.gameObject.layer == LayerMask.NameToLayer("WallLimiter") || other.gameObject.layer == LayerMask.NameToLayer("Player"))
+        if (other.gameObject.layer == LayerMask.NameToLayer("WallLimiter") || other.gameObject.layer == LayerMask.NameToLayer("Player") ||
+            other.gameObject.layer == LayerMask.NameToLayer("Missile"))
         {
             return; // Ignore this collision
         }
