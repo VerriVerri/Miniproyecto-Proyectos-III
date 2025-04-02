@@ -6,6 +6,9 @@ using System.Text;
 
 public class Guns : MonoBehaviour
 {
+    public WeaponManager managerWeapons;
+
+
     public GameObject gunPoint;
     public Vector3 aimOffset;
     public Vector3 aimVector;
@@ -13,7 +16,8 @@ public class Guns : MonoBehaviour
     public CameraCollider camCollider;
     public float aimDistance = 30f;
     Rigidbody rb;
-
+    public bool canShoot = true;
+    public GameObject shotGunEffect;
 
 
     public GameObject boolet;
@@ -22,7 +26,8 @@ public class Guns : MonoBehaviour
     public float rocketForce;
     public Transform missileTarget;
     public Vector3 targetPosition;
-    [Range(1, 10)] [Tooltip("1 = Pistol, 2 = Shotgun, 3 = Missile")]
+    public Transform previousTarget;
+    [Range(0, 10)] [Tooltip("1 = Pistol, 2 = Shotgun, 3 = Missile")]
     public int shootMode;
     [Range(1, 20)]
     public int pellets;
@@ -41,7 +46,8 @@ public class Guns : MonoBehaviour
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
-        
+        previousTarget = transform;
+        shotGunEffect.SetActive(false);
         Cursor.visible = false;
         Cursor.lockState = CursorLockMode.Locked;
         rb = GetComponent<Rigidbody>();
@@ -49,37 +55,51 @@ public class Guns : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        
+        //CheckWeapon();
         GetAimDirection();
-        if (Input.GetButtonDown("Shoot"))
+        if (Input.GetButtonDown("Shoot") && canShoot)
         {
             switch (shootMode)
             {
                 case 1:
                     if (pistolAvailable) 
                     {
+                        if (managerWeapons.pistolAmmoLeft == 0) return;
+                        managerWeapons.OnShootWeapon(WeaponType.Pistol);
                         ShootBoolet(4000f); 
                         StartCoroutine(PistolCooldown()); 
                     }
                     break;
                 case 2:
-                    if (shotgunAvailable) 
+                    if (shotgunAvailable)
                     {
+                        if (managerWeapons.shotgunAmmoLeft == 0) return;
+                        GameObject effectInstance = Instantiate(shotGunEffect, shotGunEffect.transform.position, shotGunEffect.transform.rotation);
+                        effectInstance.transform.SetParent(shotGunEffect.transform.parent); // Match parent
+                        effectInstance.SetActive(true); // Ensure it's active
+                        Destroy(effectInstance, 5f); // Destroy after 5 seconds
+
+                        managerWeapons.OnShootWeapon(WeaponType.Shotgun);
                         shotgunVector = new Vector3[pellets];
                         Shotgun(pellets);
                         ShootBoolet(4000f, pellets);
                         KnockBack(knockBackMultiplier);
                         StartCoroutine(ShotgunCooldown());
                     }
-                    
+
 
                     break;
                 case 3:
                     if (missileAvailable)
                     {
-
+                        EnemyController controller = new EnemyController();
+                        if (managerWeapons.missileAmmoLeft == 0) return;
                         ShootMissile();
                         StartCoroutine(MissileCooldown());
+                        managerWeapons.OnShootWeapon(WeaponType.RPG);
+                        missileTarget = null;
+                        targetPosition = Vector3.zero;
+                        
                     }
                     break;
 
@@ -88,6 +108,7 @@ public class Guns : MonoBehaviour
         }
         if (Input.GetButtonDown("Shoot2"))
         {
+
             FindTarget( out missileTarget, out targetPosition);
             
         }
@@ -138,48 +159,83 @@ public class Guns : MonoBehaviour
         target = Vector3.zero;
 
         Vector3 direction = (camCollider.cameraTarget.position - camCollider.cam1.transform.position).normalized;
-        Vector3 aimVector = camCollider.cam1.transform.position + direction * aimDistance;
-        GameObject firstcollision;
+        Vector3 aimVector = camCollider.cam1.transform.position + direction * (7 * aimDistance);
 
-        StartCoroutine(DrawDebugRay(camCollider.cam1.transform.position, direction, aimDistance, Color.red, 3f)); // Draws ray for 3 seconds
+        StartCoroutine(DrawDebugRay(camCollider.cam1.transform.position, direction, 7 * aimDistance, Color.red, 3f)); // Draws ray for 3 seconds
 
-        if (Physics.Raycast(camCollider.cam1.transform.position, direction, out RaycastHit hit, aimDistance, layerMask))
+        if (Physics.Raycast(camCollider.cam1.transform.position, direction, out RaycastHit hit, 7 * aimDistance, layerMask, QueryTriggerInteraction.Collide))
         {
             target = hit.point;
             StartCoroutine(DrawDebugSphere(hit.point, 3f, Color.green));
-            string overlapObjects;
+
             Collider[] colliders = Physics.OverlapSphere(hit.point, 3f);
+            Transform closestTarget = null;
+            float closestDistance = Mathf.Infinity; // Initialize with a large value
+
+            // Iterate through each collider
             foreach (Collider col in colliders)
             {
                 if (col.CompareTag("Enemy"))
                 {
-                    targetObject = col.transform;
-                    target = col.transform.position;
+                    float distanceToCenter = Vector3.Distance(hit.point, col.transform.position);
 
-                    StartCoroutine(DrawDebugSphere(target, 3f, Color.yellow));
-                    Debug.Log($"Target Found: {targetObject.name} at {target}");
-                    return;
+                    if (distanceToCenter < closestDistance)
+                    {
+                        closestDistance = distanceToCenter;
+                        closestTarget = col.transform;
+                    }
                 }
-                
             }
-            if (colliders.Length != 0)
+
+            // If a closest target was found, set it
+            if (closestTarget != null)
             {
-                firstcollision = colliders[0].gameObject;
-                Debug.Log($"No enemy found, collided with {firstcollision}.");
+                targetObject = closestTarget;
+                target = closestTarget.position;
+
+                // Get the EnemyController of the closest target and activate OnMarked for it
+                if (closestTarget.TryGetComponent<EnemyController>(out EnemyController newTargetController))
+                {
+                    // Unmark all enemies
+                    EnemyController[] allEnemies = FindObjectsByType<EnemyController>(FindObjectsSortMode.None);
+                    foreach (EnemyController enemyController in allEnemies)
+                    {
+                        enemyController.OnUnmarked(); // Unmark other enemies
+                    }
+
+                    // Mark the new closest target
+                    newTargetController.OnMarked();
+                }
+
+                StartCoroutine(DrawDebugSphere(target, 3f, Color.yellow));
+                Debug.Log($"Target Found: {targetObject.name} at {target}");
+            }
+            else
+            {
+                EnemyController[] allEnemies = FindObjectsByType<EnemyController>(FindObjectsSortMode.None);
+                foreach (EnemyController enemyController in allEnemies)
+                {
+                    enemyController.OnUnmarked(); // Unmark other enemies
+                }
+                Debug.Log("No valid target found.");
             }
         }
         else
         {
+            EnemyController[] allEnemies = FindObjectsOfType<EnemyController>();
+            foreach (EnemyController enemyController in allEnemies)
+            {
+                enemyController.OnUnmarked(); // Unmark other enemies
+            }
             target = Vector3.zero;
             Debug.Log("No solid target found");
         }
 
         StartCoroutine(DrawDebugSphere(target, 3f, Color.blue));
-        //Debug.Log($"No enemy found. Target set to: {target}");
     }
+
     public void ShootMissile()
     {
-        
         GameObject homingMissile = Instantiate(missile, gunPoint.transform.position, Camera.main.transform.rotation);
         HomingMissile missileScript = homingMissile.GetComponent<HomingMissile>();
         Rigidbody missileRb = homingMissile.GetComponent<Rigidbody>();
@@ -206,7 +262,7 @@ public class Guns : MonoBehaviour
     }
     public void ShootBoolet(float force)
     {
-        if (boolet == null) return;
+        if (boolet == null && managerWeapons.pistolAmmoLeft == 0) return;
 
         GameObject bullet = Instantiate(boolet, gunPoint.transform.position, Quaternion.identity);
         Boolet bulletScript = bullet.GetComponent<Boolet>();
@@ -254,6 +310,7 @@ public class Guns : MonoBehaviour
     }
     public void KnockBack(float amount)
     {
+        rb.linearVelocity /= 2;
         rb.AddForce(-aimDirection.normalized * amount * 100f);
     }
     private IEnumerator DrawDebugSphere(Vector3 position, float duration, Color color)
@@ -316,5 +373,26 @@ public class Guns : MonoBehaviour
         missileAvailable = false;
         yield return new WaitForSeconds(missileCooldown);
         missileAvailable = true;
+    }
+
+    private void CheckWeapon()
+    {
+        switch (managerWeapons.primaryWeapon) 
+        {
+            case WeaponType.Pistol:
+                managerWeapons.StartSwapCoolDown(0.27f, 0);
+                shootMode = 1;
+                break;
+            case WeaponType.Shotgun:
+                managerWeapons.StartSwapCoolDown(0.63f, 0);
+                shootMode = 2;
+                break;
+            case WeaponType.RPG:
+                managerWeapons.StartSwapCoolDown(1.43f, 0);
+                shootMode = 3;
+                break;
+        }
+
+
     }
 }

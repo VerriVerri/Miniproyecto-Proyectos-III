@@ -108,7 +108,7 @@ MonoBehaviour:
   explosionForce: 20
   explosionRadius: 5
   upwardsModifier: 1
-  explosionPrefab: {fileID: 8326731630618106066, guid: 22d52fc7749301549989267e19d949b4, type: 3}
+  explosionPrefab: {fileID: 417761080263594737, guid: 7800b8f6b712bfe49bd663eeb3ebe1e4, type: 3}
   initialSpeed: 0
   timeToActivate: 0.2
   activatedRocket: 0

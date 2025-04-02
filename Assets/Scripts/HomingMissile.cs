@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections;
+using System.Collections.Generic;
 
 public class HomingMissile : MonoBehaviour
 {
@@ -10,6 +11,7 @@ public class HomingMissile : MonoBehaviour
     public float explosionRadius = 8f;
     public float upwardsModifier = 1f;
     public GameObject explosionPrefab;
+    public float damage = 70f;
 
     public float initialSpeed;
     public float timeToActivate = 1f;
@@ -47,6 +49,12 @@ public class HomingMissile : MonoBehaviour
         if (target != null)
         {
             targetPosition = target.position;
+        }
+        else if (target == null && targetPosition != Vector3.zero)
+        {
+            
+            TriggerExplosion(transform.position);
+            Destroy(gameObject);
         }
     }
 
@@ -182,10 +190,12 @@ public class HomingMissile : MonoBehaviour
         GameObject[] enemiesAndPlayers = new GameObject[players.Length + enemies.Length];
         players.CopyTo(enemiesAndPlayers, 0);
         enemies.CopyTo(enemiesAndPlayers, players.Length);
+        List<Life> lifeInRange = new List<Life>();
 
         // Loop through all objects
         foreach (GameObject obj in enemiesAndPlayers)
         {
+            Life targetLife = obj.GetComponentInChildren<Life>();
             // Get the Rigidbody component of the object
             Rigidbody targetRb = obj.GetComponent<Rigidbody>();
 
@@ -201,6 +211,8 @@ public class HomingMissile : MonoBehaviour
                 // If the target is within the explosion radius, apply the full force
                 if (distance <= explosionRadius)
                 {
+                    lifeInRange.Add(targetLife);
+
                     // Normalize the direction to get the direction only
                     directionToTarget.Normalize();
 
@@ -208,10 +220,25 @@ public class HomingMissile : MonoBehaviour
                     targetRb.AddForce(directionToTarget * explosionForce, ForceMode.Impulse);
                 }
             }
+            
         }
+        DealDamageToLife(lifeInRange);
     }
 
-
+    void DealDamageToLife(List<Life> lifeList)
+    {
+        foreach (Life life in lifeList)
+        {
+            if (life != null)
+            {
+                life.LoseLife(damage);
+            }
+            else
+            {
+                Debug.Log("Life is null");
+            }
+        }
+    }
     void OnDrawGizmosSelected()
     {
         // Set the color of the Gizmo
